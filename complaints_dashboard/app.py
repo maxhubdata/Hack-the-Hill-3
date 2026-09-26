@@ -1,13 +1,4 @@
-"""
-Flask API + dashboard for the Northwind complaints data on Tiger Cloud.
 
-Setup:
-    pip install -r requirements.txt
-    export DATABASE_URL="postgres://user:password@host:port/dbname?sslmode=require"
-    python app.py
-
-Then open http://localhost:5000
-"""
 
 import os
 
@@ -19,8 +10,7 @@ app = Flask(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# Columns the dashboard is allowed to filter on. Whitelisting like this
-# prevents building SQL from arbitrary user-supplied column names.
+
 FILTERABLE_COLUMNS = {
     "category": "category",
     "region": "region",
