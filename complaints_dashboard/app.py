@@ -5,6 +5,9 @@ import os
 import psycopg2
 import psycopg2.extras
 from flask import Flask, jsonify, render_template, request
+import uuid
+from datetime import date
+from flask import redirect, url_for
 
 app = Flask(__name__)
 
@@ -197,6 +200,57 @@ def api_complaints():
     conn.close()
 
     return jsonify({"total": total, "page": page, "per_page": per_page, "rows": rows})
+
+DROPDOWN_COLUMNS = ["channel", "category", "priority", "region"]
+
+DEFAULT_SLA_DAYS = {"P1": 5, "P2": 10, "P3": 20}
+
+
+@app.route("/submit", methods=["GET"])
+def submit_form():
+    conn = get_connection()
+    cur = conn.cursor()
+    options = {}
+    for column in DROPDOWN_COLUMNS:
+        cur.execute(f"SELECT DISTINCT {column} AS value FROM complaints ORDER BY 1")
+        options[column] = [row["value"] for row in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return render_template("submit.html", options=options)
+
+
+@app.route("/submit", methods=["POST"])
+def submit_complaint():
+    form = request.form
+    complaint_id = f"NW-{uuid.uuid4().hex[:8].upper()}"
+    priority = form["priority"]
+    sla_days = DEFAULT_SLA_DAYS.get(priority, 10)
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO complaints (
+            complaint_id, date_opened, date_closed, status, channel, category,
+            priority, region, source_system, transferred_between_systems,
+            sla_days, days_to_close, sla_breach, reopened, resolution_action,
+            resolvable_by_information_only, bill_correction_value, account_id
+        ) VALUES (
+            %s, %s, NULL, 'Open', %s, %s,
+            %s, %s, 'Web form', FALSE,
+            %s, NULL, FALSE, FALSE, NULL,
+            NULL, NULL, %s
+        )
+        """,
+        (
+            complaint_id, date.today(), form["channel"], form["category"],
+            priority, form["region"], sla_days, form["account_id"],
+        ),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return redirect(url_for("submit_form", success=complaint_id))
 
 
 if __name__ == "__main__":
