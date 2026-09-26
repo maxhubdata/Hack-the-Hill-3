@@ -29,8 +29,29 @@ def regressions(kpis):
     slope1, intercept1 = np.polyfit(x1,y1,1)
     r2_1 = _r_squared(y1, intercept1 + slope1 * x1)
 
+    x2 = kpis["backlog"].values
+    y2 = kpis["avg_days_to_close"].values
+    slope2, intercept2 = np.polyfit(x2, y2, 1)
+    r2_2 = _r_squared(y2, intercept2 + slope2 * x2)
+    
+    x3 = kpis["avg_days_to_close"].values
+    y3 = kpis["cost_to_serve_per_account"].values
+    slope3, intercept3 = np.polyfit(x3, y3, 1)
+    r2_3 = _r_squared(y3, intercept3 + slope3 * x3)
+
+    return (slope1, intercept1, r2_1,
+        slope2, intercept2, r2_2,
+        slope3, intercept3, r2_3)
+
+
+
+(slope1, intercept1, r2_1,
+ slope2, intercept2, r2_2,
+ slope3, intercept3, r2_3) = regressions(kpis)
+
+
 print("=== Fitted regressions (this IS the model — no black box) ===")
-    print(f"  regulator_score      = {intercept1:.4f} + {slope1:.5f} * avg_days_to_close   (R^2={r2_1:.3f})")
-    print(f"  avg_days_to_close    = {intercept2:.4f} + {slope2:.6f} * backlog             (R^2={r2_2:.3f})")
-    print(f"  cost_to_serve/acct   = {intercept3:.4f} + {slope3:.4f} * avg_days_to_close    (R^2={r2_3:.3f})")
-    print()
+print(f"  regulator_score      = {intercept1:.4f} + {slope1:.5f} * avg_days_to_close   (R^2={r2_1:.3f})")
+print(f"  avg_days_to_close    = {intercept2:.4f} + {slope2:.6f} * backlog             (R^2={r2_2:.3f})")
+print(f"  cost_to_serve/acct   = {intercept3:.4f} + {slope3:.4f} * avg_days_to_close    (R^2={r2_3:.3f})")
+print()
