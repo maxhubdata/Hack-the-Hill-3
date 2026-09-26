@@ -10,11 +10,12 @@ body {
 
 header {
   padding: 24px 0 8px;
+  text-align: center;
 }
 
 header h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: 36px;
   font-weight: 600;
 }
 
