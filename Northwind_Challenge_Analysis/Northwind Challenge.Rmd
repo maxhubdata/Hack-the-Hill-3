@@ -1,0 +1,236 @@
+---
+title: "Hack the Hill Northwind Brief"
+output: pdf_document
+date: "2026-09-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Load Data
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+kpis <- read.csv("Northwind_Challenge_Data/northwind_monthly_kpis.csv")
+complaints <- read.csv("Northwind_Challenge_Data/northwind_complaints.csv")
+staff <- read.csv("Additional CGI Files/northwind_contact_centre_staffing.csv")
+meter <- read.csv("Northwind_Challenge_Data/northwind_meter_reads.csv")
+pilot <- read.csv("Northwind_Challenge_Data/northwind_ai_pilot_2025.csv")
+
+```
+```{r}
+# Good standing metrics
+good_standing <- complaints |> 
+    mutate(
+    # 1. Convert Excel serial numbers to dates
+    date_opened = as.Date(date_opened, origin = "1899-12-30"),
+    date_closed = as.Date(date_closed, origin = "1899-12-30"),
+    
+    # 2. Create a clean month column (snapped to the 1st of each month)
+    month_opened = floor_date(date_opened, "month")) |>
+    filter(floor_date(date_closed, "month") == ymd("2025-02-01"))
+good_standing
+```
+```{r}
+# Minimum targets for good standing
+good_p1 <- good_standing |> filter(priority == "P1")
+good_p2 <- good_standing |> filter(priority == "P2")
+good_p3 <- good_standing |> filter(priority == "P3")
+good_p1_time <- mean(good_p1$days_to_close)
+good_p2_time <- mean(good_p2$days_to_close)
+good_p3_time <- mean(good_p3$days_to_close)
+print(paste0("To maintain a good standing, P1 cases should take on average ", sprintf("%.2f", good_p1_time), " days, P2 should take on average ", sprintf("%.2f", good_p2_time), " days, and P3 ", sprintf("%.2f", good_p3_time), " days."))
+# Maximum breach rate
+breach_rate_good_p1 <- mean(good_p1$sla_breach)
+breach_rate_good_p2 <- mean(good_p2$sla_breach)
+breach_rate_good_p3 <- mean(good_p3$sla_breach)
+print(paste0("The maximum breach rate for P1 cases should be ", sprintf("%.2f", breach_rate_good_p1 * 100), "%, P2 should be ", sprintf("%.2f", breach_rate_good_p2*100), "%, and P3 should be ", sprintf("%.2f", breach_rate_good_p3*100), "%."))
+```
+
+```{r}
+# Origin of transfers
+transfer_origin <- complaints |> filter(transferred_between_systems == 1) |>
+  count(source_system)
+transfer_origin 
+```
+
+```{r}
+# Number of open and reopened complaints
+complaints_open = complaints |> filter(status == "Open") |> count(category, sort = TRUE) |> mutate(ratio = (n / sum(n))*100)
+complaints_open
+complaints_reopened = complaints |> filter(status == "Closed - reopened") |> count(category, sort = TRUE) |> mutate(ratio = (n / sum(n))*100)
+complaints_reopened
+```
+```{r}
+# Total cost of certain complaints
+resolution = complaints |> count(resolution_action, sort = TRUE) |> mutate(ratio = (n/sum(n))*100)
+resolution
+cost_resolution <- resolution |> 
+  mutate(total_cost = case_when(
+  resolution_action == "Meter visit required" ~ n * 92,
+  resolution_action == "Appointment rebooked by agent" ~ n * 40,
+  resolution_action == "Bill corrected and re-issued" ~ n * 34,
+  TRUE ~ 0
+))
+cost_resolution
+```
+```{r}
+bill_correction = complaints |> filter(resolution_action == "Bill corrected and re-issued") |> summarize(total = sum(bill_correction_value, na.rm = TRUE)) 
+bill_correction
+refund = complaints |> filter(resolution_action == "Refund or credit applied") |> summarize(total = sum(bill_correction_value, na.rm = TRUE)) 
+refund
+```
+```{r}
+transfers <- complaints |> count(transferred_between_systems) |> mutate(cost = case_when(
+  transferred_between_systems == 1 ~ n * 121,
+  transferred_between_systems == 0 ~ n * 68
+))
+transfers
+```
+```{r}
+resolution_ratios <- complaints |> 
+  count(transferred_between_systems, resolution_action) |> 
+  group_by(resolution_action) |> 
+  mutate(ratio = n / sum(n))
+resolution_ratios
+```
+```{r}
+region <- complaints |> 
+  count(transferred_between_systems, region) |> 
+  group_by(region) |> 
+  mutate(ratio = n / sum(n))
+region
+```
+```{r}
+# Increased Rate of Meter Related Complaints in Barrowdale and Dunmoor
+condensed_region <- complaints |> 
+  mutate(region_group = case_when(
+    region %in% c("Barrowdale", "Dunmoor") ~ "Barrowdale & Dunmoor",
+    TRUE ~ "Other Regions"
+  ))
+condensed_region |> count(region_group)
+billing_rate <- condensed_region |> 
+  count(category, region_group) |> 
+  group_by(region_group) |> 
+  mutate(ratio = n / sum(n))
+billing_rate
+write.table(billing_rate, "clipboard", sep = "\t", row.names = FALSE, quote = FALSE)
+```
+```{r}
+# Number of complaints by priority
+open <- complaints |> filter(status == "Open")
+priority_count <- open |> count(priority)
+priority_count
+p1 <- open |> filter(priority == "P1") |> arrange(region)
+p1
+```
+
+```{r}
+# Staff in each area
+condensed_staff <- staff |> 
+  mutate(region_group = case_when(
+    region %in% c("Barrowdale", "Dunmoor") ~ "Barrowdale & Dunmoor",
+    TRUE ~ "Other Regions"))
+head(condensed_staff)
+
+```
+```{r}
+# Regulator Metrics
+closed <- complaints |> filter(status == "Closed")
+on_time_closure_sept <- complaints |> 
+  # 1. Convert Excel date and filter for September 2026 and Closed status
+  mutate(date_closed = as.Date(date_closed, origin = "1899-12-30")) |> 
+  filter(
+    status == "Closed",
+    floor_date(date_closed, "month") == ymd("2026-09-01")
+  ) |> 
+  # 2. Count occurrences and calculate the breach/compliance ratio
+  count(status, sla_breach) |> 
+  group_by(status) |> 
+  mutate(ratio = n / sum(n))
+on_time_closure <- closed |> count(status, sla_breach) |> 
+  group_by(status) |>
+  mutate(ratio = n/sum(n))
+on_time_closure_sept
+on_time_closure
+```
+```{r}
+# Combined monthly data, predicting regulator satisfaction from data we have
+monthly_sla_summary <- complaints |> 
+  mutate(
+    # 1. Convert Excel serial numbers to dates
+    date_opened = as.Date(date_opened, origin = "1899-12-30"),
+    date_closed = as.Date(date_closed, origin = "1899-12-30"),
+    
+    # 2. Create a clean month column (snapped to the 1st of each month)
+    month_opened = floor_date(date_opened, "month"),
+    
+    # 3. Calculate duration and check target
+    duration_days = as.numeric(difftime(date_closed, date_opened, units = "days")),
+    met_target = case_when(
+      priority == "P1" ~ duration_days <= 5,
+      priority == "P2" ~ duration_days <= 10,
+      priority == "P3" ~ duration_days <= 20,
+      TRUE ~ FALSE
+    )
+  ) |> 
+  # 4. Group by month to calculate metrics per period
+  group_by(month_opened) |> 
+  summarise(
+    total_complaints = n(),
+    closed_on_time = sum(met_target, na.rm = TRUE),
+    pct_within_target = (closed_on_time / total_complaints) * 100
+  ) |> 
+  arrange(month_opened)
+
+monthly_sla_summary
+
+monthly_reopened_summary <- complaints |> 
+  mutate(
+    # 1. Convert Excel serial numbers to proper dates
+    date_opened = as.Date(date_opened, origin = "1899-12-30"),
+    date_closed = as.Date(date_closed, origin = "1899-12-30"),
+    
+    # 2. Create a clean month column (snapped to the 1st of each month)
+    month_opened = floor_date(date_opened, "month"),
+    
+    # 3. Check if it was reopened and closed within 3 months of opening
+    reopened_in_3_months = (status == "Closed - reopened") & (date_closed <= date_opened + months(3))
+  ) |> 
+  # 4. Group by month to calculate the metrics per period
+  group_by(month_opened) |> 
+  summarise(
+    total_complaints = n(),
+    reopened_on_time = sum(reopened_in_3_months, na.rm = TRUE),
+    pct_reopened_in_3_months = (reopened_on_time / total_complaints) * 100
+  ) |> 
+  arrange(month_opened)
+
+monthly_reopened_summary
+model <- lm(kpis$regulator_satisfaction_score_of_5 ~ monthly_sla_summary$pct_within_target + monthly_reopened_summary$pct_reopened_in_3_months)
+summary(model)
+```
+```{r}
+# Feasibility of AI chatbot
+# Cost: $640,000 per year
+annual_sessions <- (4/3) * sum(pilot$assistant_sessions)
+fully_contained <- annual_sessions * mean(pilot$fully_contained_rate)
+fully_contained
+escalated <- annual_sessions * mean(pilot$ escalated_to_agent_rate)
+escalated
+
+# linear regression for regulator score via pilot
+closed_within_target <- pilot$assistant_sessions * pilot$fully_contained_rate
+reopened <- monthly_reopened_summary$pct_reopened_in_3_months[4:12]
+customer_satisfaction <- pilot$assistant_csat_of_5
+complaint <- pilot$assistant_sessions * pilot$complaint_raised_after_session_rate
+pilot_satisfaction <- kpis$regulator_satisfaction_score_of_5[4:12]
+pilot_satisfaction
+monthly_reopened_summary$pct_reopened_in_3_months
+ai_model <- lm(pilot_satisfaction ~ closed_within_target + reopened + customer_satisfaction + complaint)
+
+summary(ai_model)
+```
+
