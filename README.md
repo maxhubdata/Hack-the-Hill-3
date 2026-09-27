@@ -1,20 +1,35 @@
-# Complaints dashboard
+# Hack the Hill 3 — Northwind Complaints Dashboard
 
-A Flask + Tiger Cloud (Postgres/TimescaleDB) dashboard for the Northwind
-complaints dataset (25,416 rows, Oct 2024–Sep 2026).
+A Flask dashboard for exploring and submitting utility complaints, backed by
+Tiger Cloud (Postgres + TimescaleDB).
 
 ## Stack
 
-- **Database**: Tiger Cloud (Postgres, optionally a TimescaleDB hypertable)
-- **Backend**: Flask, serving both the page and JSON API endpoints
-- **Frontend**: plain HTML/CSS/JS with Chart.js, calling the Flask API with `fetch()`
+- **Database**: Tiger Cloud (Postgres, with `complaints` set up as a TimescaleDB hypertable)
+- **Backend**: Flask — serves the dashboard page, the submission form, and a JSON API
+- **Frontend**: plain HTML/CSS/JS, charts drawn with Chart.js via `fetch()` calls to the API (hosted on render)
+
+## Project structure
+
+```
+complaints_dashboard/
+├── app.py                   Flask app: routes + JSON API endpoints
+├── schema.sql                Table + hypertable + index definitions
+├── requirements.txt           Python dependencies
+├── templates/
+│   ├── index.html             Dashboard page
+│   └── submit.html            "Submit a complaint" form
+└── static/
+    ├── css/style.css           Styling
+    └── js/dashboard.js         Fetches from the API and renders charts/table
+```
 
 ## Setup
 
-### 1. Create your Tiger Cloud database
+### 1. Create a Tiger Cloud database
 
-Sign up at [tigerdata.com](https://www.tigerdata.com), create a service, and
-copy its connection string from the Tiger Console. It looks like:
+Sign up at [tigerdata.com](https://www.tigerdata.com) and create a service.
+Copy its connection string from the Tiger Console — it looks like:
 
 ```
 postgres://user:password@host:port/dbname?sslmode=require
@@ -23,6 +38,7 @@ postgres://user:password@host:port/dbname?sslmode=require
 ### 2. Install dependencies
 
 ```bash
+cd complaints_dashboard
 python -m venv venv
 source venv/bin/activate        # on Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -30,61 +46,48 @@ pip install -r requirements.txt
 
 ### 3. Create the table
 
-```bash
-export DATABASE_URL="postgres://user:password@host:port/dbname?sslmode=require"
-psql "$DATABASE_URL" -f schema.sql
-```
+Paste the contents of `schema.sql` into the SQL editor in the Tiger Console
+and run it (or use `psql "$DATABASE_URL" -f schema.sql` if you have `psql`
+installed locally).
 
-(If you don't have `psql` installed locally, you can also paste the contents
-of `schema.sql` into the SQL editor in the Tiger Console.)
+### 4. Load your complaints data
 
-### 4. Import your CSV
+The easiest way in is Tiger Console's built-in CSV importer: **Actions →
+Import data → Upload CSV file**, ingesting into the existing `complaints`
+table. From there on, new complaints can also be added straight through the
+dashboard's own submission form (see below) — no re-import needed.
 
-```bash
-python import_csv.py /path/to/northwind_complaints.csv
-```
-
-This loads all rows in batches of 1,000 and skips duplicates on re-run.
-
-### 5. Run the dashboard
+### 5. Run the app
 
 ```bash
 export DATABASE_URL="postgres://user:password@host:port/dbname?sslmode=require"
 python app.py
 ```
 
-Open **http://localhost:5000** in your browser.
+Open **http://localhost:5000**.
 
 ## What's in the dashboard
 
-- KPI cards: total complaints, currently open, avg. days to close, SLA breach rate, reopened count
-- Trend chart: complaints opened per month, with SLA breach % overlaid
-- Breakdown charts: by category, region, priority, channel
-- Filters: date range, category, region, status, priority, channel — all charts and the table respond to the active filters
-- A paginated table of the underlying complaints
-
-## Project structure
-
-```
-app.py                  Flask app: page route + JSON API endpoints
-schema.sql               Table + hypertable + index definitions
-import_csv.py             One-off script to load the CSV into Tiger Cloud
-requirements.txt          Python dependencies
-templates/index.html      Dashboard page
-static/css/style.css      Styling
-static/js/dashboard.js    Fetches from the API and renders charts/table
-```
+- **KPI cards**: total complaints, currently open, avg. days to close, SLA breach rate, reopened count
+- **Trend chart**: complaints opened per month, with SLA breach % overlaid
+- **Breakdown charts**: by category, region, priority, channel
+- **Filters**: date range, category, region, status, priority, channel — everything on the page responds to the active filters
+- **Complaints table**: paginated list of the underlying rows
+- **Submit form** (`/submit`): lets anyone log a new complaint directly into the database — it's saved as `Open` and shows up on the dashboard immediately
 
 ## Deploying
 
-Once it works locally, this Flask app deploys as-is to Render, Fly.io, or
-Railway — just set the `DATABASE_URL` environment variable on the host to
-your Tiger Cloud connection string, and don't run with `debug=True` in
-production (remove that flag or set `debug=False` in `app.run(...)`).
+This deploys to Render (or Fly.io/Railway) as-is. A couple of Render-specific
+notes learned the hard way:
+
+- **Root Directory**: set to `complaints_dashboard` — that's where `requirements.txt` and `app.py` actually live.
+- **Build command**: `pip install -r requirements.txt`
+- **Start command**: `gunicorn app:app` (not the Django-style `your_application.wsgi` Render fills in by default)
+- **Python version**: pin it explicitly. Add a `PYTHON_VERSION` environment variable set to `3.11.11` in Render's Environment tab — Render's newer default Python versions can ship without a compatible prebuilt wheel for `psycopg2-binary`, which crashes the app on startup.
+- **`DATABASE_URL`**: add it under Render's Environment tab, same as locally.
+- Don't run with `debug=True` in production.
 
 ## Extending it
 
-- Add more filters (e.g. `account_id` search, SLA breach only)
-- Add a chart for `bill_correction_value` totals by category
-- Add authentication if this will be exposed outside your team
-- Add caching (e.g. Flask-Caching) on the aggregate endpoints if the table grows large
+- Split the table into open complaints and closed complaints, the closed complaints table would act as a document archive (replacing the old DocVault).
+- Once obtained the data for the regulatory reporting (we did not have it), create an autofill form with the information extracted straight from the TigerData database in order to streamline the process and save on time and cost.
