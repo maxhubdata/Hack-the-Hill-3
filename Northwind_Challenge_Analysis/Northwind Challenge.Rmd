@@ -30,8 +30,17 @@ good_standing <- complaints |>
     
     # 2. Create a clean month column (snapped to the 1st of each month)
     month_opened = floor_date(date_opened, "month")) |>
-    filter(floor_date(date_closed, "month") == ymd("2025-02-01"))
+    filter(floor_date(date_closed, "month") < ymd("2025-02-01"))
 good_standing
+bad_standing <- complaints |>
+  mutate(
+    # 1. Convert Excel serial numbers to dates
+    date_opened = as.Date(date_opened, origin = "1899-12-30"),
+    date_closed = as.Date(date_closed, origin = "1899-12-30"),
+    
+    # 2. Create a clean month column (snapped to the 1st of each month)
+    month_opened = floor_date(date_opened, "month")) |>
+    filter(floor_date(date_closed, "month") > ymd("2025-02-01"))
 ```
 ```{r}
 # Minimum targets for good standing
@@ -41,12 +50,29 @@ good_p3 <- good_standing |> filter(priority == "P3")
 good_p1_time <- mean(good_p1$days_to_close)
 good_p2_time <- mean(good_p2$days_to_close)
 good_p3_time <- mean(good_p3$days_to_close)
+good_p1_transfer <- good_standing |> filter(transferred_between_systems == 1, priority == "P1") 
+good_p1_time_transfer <- mean(good_p1_transfer$days_to_close)
+good_p1_time_transfer
+good_p2_transfer <- good_standing |> filter(transferred_between_systems == 1, priority == "P2") 
+good_p2_time_transfer <- mean(good_p2_transfer$days_to_close)
+good_p2_time_transfer
+good_p3_transfer <- good_standing |> filter(transferred_between_systems == 1, priority == "P3") 
+good_p3_time_transfer <- mean(good_p3_transfer$days_to_close)
+good_p3_time_transfer
 print(paste0("To maintain a good standing, P1 cases should take on average ", sprintf("%.2f", good_p1_time), " days, P2 should take on average ", sprintf("%.2f", good_p2_time), " days, and P3 ", sprintf("%.2f", good_p3_time), " days."))
 # Maximum breach rate
 breach_rate_good_p1 <- mean(good_p1$sla_breach)
 breach_rate_good_p2 <- mean(good_p2$sla_breach)
 breach_rate_good_p3 <- mean(good_p3$sla_breach)
 print(paste0("The maximum breach rate for P1 cases should be ", sprintf("%.2f", breach_rate_good_p1 * 100), "%, P2 should be ", sprintf("%.2f", breach_rate_good_p2*100), "%, and P3 should be ", sprintf("%.2f", breach_rate_good_p3*100), "%."))
+```
+```{r}
+# Max - Transfer between systems
+transferred_priority_true <- complaints |> filter(priority=="P3") |> filter(transferred_between_systems==1) |> summarise(mean_days = mean(days_to_close, na.rm = TRUE))
+transferred_priority_true
+transferred_priority_false <- complaints |> filter(priority=="P3") |> filter(transferred_between_systems==0) |> summarise(mean_days = mean(days_to_close, na.rm = TRUE))
+transferred_priority_false
+transferred_priority_true-transferred_priority_false
 ```
 
 ```{r}
